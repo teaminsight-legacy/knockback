@@ -34,9 +34,9 @@ Knockback.Model = Backbone.Model.extend
       response
 
   _bindProxiedMethods: ->
-    @proxied = _.select (@proxied || []), (methodName) =>
+    proxiedFunctions = _.select (@proxied || []), (methodName) =>
       _.isFunction(@[methodName])
-    _.bindAll @, @proxied...
+    _.bindAll @, proxiedFunctions... if proxiedFunctions.length > 0
 
   # Create knockout observables for attributes listed in the observable property and assign default
   # values to the attribute/observable. If the default value is an array, an observableArray will

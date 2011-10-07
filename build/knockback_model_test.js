@@ -97,6 +97,11 @@
       return ok(false, 'should ignore items in the proxied list that are not method names');
     }
   });
+  test("backbone methods don't get bound to the knockout model if proxied list is empty", function() {
+    var p;
+    p = new Fixtures.Post;
+    return same(p.save, Backbone.Model.prototype.save);
+  });
   module("Knockback.Model: observable attributes");
   test('set to default values during initialization', function() {
     var p;

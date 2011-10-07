@@ -41,10 +41,13 @@
       }
     },
     _bindProxiedMethods: function() {
-      this.proxied = _.select(this.proxied || [], __bind(function(methodName) {
+      var proxiedFunctions;
+      proxiedFunctions = _.select(this.proxied || [], __bind(function(methodName) {
         return _.isFunction(this[methodName]);
       }, this));
-      return _.bindAll.apply(_, [this].concat(__slice.call(this.proxied)));
+      if (proxiedFunctions.length > 0) {
+        return _.bindAll.apply(_, [this].concat(__slice.call(proxiedFunctions)));
+      }
     },
     _initAttributes: function(attrs, options) {
       var allAttrs, newAttrs;

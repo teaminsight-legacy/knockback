@@ -71,6 +71,10 @@ test "non-methods listed in proxied are ignored", ->
   catch err
     ok false, 'should ignore items in the proxied list that are not method names'
 
+test "backbone methods don't get bound to the knockout model if proxied list is empty", ->
+  p = new Fixtures.Post
+  same p.save, Backbone.Model.prototype.save
+
 
 ###################################################################################################
 module "Knockback.Model: observable attributes"
