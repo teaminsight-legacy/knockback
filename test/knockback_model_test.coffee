@@ -161,30 +161,6 @@ test "updates attribute after observable change", ->
   p.name('foo')
   equal p.get('name'), 'foo'
 
-test "update observableArray after array attribute change", ->
-  ok false, 'TODO: how can we make it easier to update array attributes so that callbacks fire?'
-  return
-
-  expect 2
-  p = new Fixtures.Post
-  p.tags.subscribe (newValue) ->
-    deepEqual newValue, [1, 2, 3]
-  t = p.get('tags')
-  t.push(1, 2, 3)
-  p.set tags: t # doesn't fire event because referenced array was modified without backbone's knowledge
-  deepEqual p.tags(), [1, 2, 3]
-
-test "update array attribute after observableArray change", ->
-  ok false, 'TODO: how can we make it easier to update array attributes so that callbacks fire?'
-  return
-
-  expect 2
-  p = new Fixtures.Post
-  p.bind 'change:tags', (model, newValue) ->
-    deepEqual newValue, [1, 2, 3]
-  p.tags.push(1, 2, 3)
-  deepEqual p.get('tags'), [1, 2, 3]
-
 test "events only fire once after backbone model change", ->
   expect 2
   p = new Fixtures.Post

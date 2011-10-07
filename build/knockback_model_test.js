@@ -209,34 +209,6 @@
     p.name('foo');
     return equal(p.get('name'), 'foo');
   });
-  test("update observableArray after array attribute change", function() {
-    var p, t;
-    ok(false, 'TODO: how can we make it easier to update array attributes so that callbacks fire?');
-    return;
-    expect(2);
-    p = new Fixtures.Post;
-    p.tags.subscribe(function(newValue) {
-      return deepEqual(newValue, [1, 2, 3]);
-    });
-    t = p.get('tags');
-    t.push(1, 2, 3);
-    p.set({
-      tags: t
-    });
-    return deepEqual(p.tags(), [1, 2, 3]);
-  });
-  test("update array attribute after observableArray change", function() {
-    var p;
-    ok(false, 'TODO: how can we make it easier to update array attributes so that callbacks fire?');
-    return;
-    expect(2);
-    p = new Fixtures.Post;
-    p.bind('change:tags', function(model, newValue) {
-      return deepEqual(newValue, [1, 2, 3]);
-    });
-    p.tags.push(1, 2, 3);
-    return deepEqual(p.get('tags'), [1, 2, 3]);
-  });
   test("events only fire once after backbone model change", function() {
     var p;
     expect(2);
