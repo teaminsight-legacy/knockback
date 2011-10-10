@@ -148,4 +148,54 @@
       return namespace;
     }
   });
+  Knockback.Controller = Backbone.Router.extend({
+    initialize: function(options) {
+      this._wrapped = {};
+      return _.each(this.routes, __bind(function(name, pattern) {
+        var handler;
+        handler = this.handlerForRoute(name);
+        if (handler) {
+          return handler.callback = this._wrapped[name] = _.wrap(handler.callback, __bind(function(callback, urlFragment) {
+            return this.actionWithFilters(name, callback, urlFragment);
+          }, this));
+        }
+      }, this));
+    },
+    inverseRoutes: function() {
+      return this._inverseRoutes || (this._inverseRoutes = _.reduce(this.routes, (__bind(function(memo, name, pattern) {
+        memo[name] = this._routeToRegExp(pattern).toString();
+        return memo;
+      }, this)), {}));
+    },
+    handlerForRoute: function(routeName) {
+      var handlers, routeExp;
+      routeExp = this.inverseRoutes()[routeName];
+      handlers = Backbone.history ? Backbone.history.handlers : [];
+      return _.detect(handlers, function(handler) {
+        return handler.route.toString() === routeExp;
+      });
+    },
+    actionWithFilters: function(name, action, urlFragment) {
+      _.each(this.filtersForAction(name, 'before'), __bind(function(filter) {
+        return filter.apply(this, [urlFragment]);
+      }, this));
+      action(urlFragment);
+      return _.each(this.filtersForAction(name, 'after'), __bind(function(filter) {
+        return filter.apply(this, [urlFragment]);
+      }, this));
+    },
+    filtersForAction: function(actionName, filterType) {
+      var action_filters, global_filters, methodNames;
+      if (!this.inverseRoutes()[actionName]) {
+        throw "cannot run filters for non-existent action, '" + actionName + "'";
+      }
+      this.filters || (this.filters = {});
+      global_filters = this.filters[filterType] || [];
+      action_filters = this.filters["" + filterType + "_" + actionName] || [];
+      methodNames = [].concat(global_filters, action_filters);
+      return _.map(methodNames, __bind(function(methodName) {
+        return this[methodName];
+      }, this));
+    }
+  });
 }).call(this);

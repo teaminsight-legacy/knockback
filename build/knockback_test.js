@@ -1,5 +1,179 @@
 (function() {
   var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; };
+  window.Fixtures = {};
+  Fixtures.BackboneSyncResponse = {};
+  Fixtures.testSync = function(httpMethod, model, options) {
+    return options.success(Fixtures.BackboneSyncResponse, 200, null);
+  };
+  Fixtures.Post = Knockback.Model.extend({
+    observables: {
+      name: "",
+      tags: [],
+      meta: {}
+    },
+    relations: {
+      author: 'Fixtures.Author',
+      comments: 'Fixtures.CommentsCollection'
+    }
+  });
+  Fixtures.Post.prototype.sync = Fixtures.testSync;
+  Fixtures.PostsCollection = Backbone.Collection.extend({
+    model: Fixtures.Post
+  });
+  Fixtures.Author = Knockback.Model.extend({
+    observables: {
+      name: ""
+    },
+    relations: {
+      posts: 'Fixtures.PostsCollection'
+    }
+  });
+  Fixtures.Comment = Knockback.Model.extend({
+    observables: {
+      content: "",
+      position: 0
+    },
+    relations: {
+      post: 'Fixtures.Post'
+    }
+  });
+  Fixtures.CommentsCollection = Backbone.Collection.extend({
+    model: Fixtures.Comment
+  });
+  Fixtures.ProxyModel = Knockback.Model.extend({
+    proxied: ['getThis', 'setThis'],
+    setThis: function() {
+      return window.thisValueForKnockbackModelProxyTest = this;
+    },
+    getThis: function() {
+      return window.thisValueForKnockbackModelProxyTest;
+    }
+  });
+  Fixtures.IgnoreProxyModel = Knockback.Model.extend({
+    proxied: ['x', 'foo'],
+    initialize: function(attrs, options) {
+      this.x = 23;
+      return Knockback.Model.prototype.initialize.apply(this, [attrs, options]);
+    }
+  });
+  Fixtures.PostsController = Knockback.Controller.extend({
+    routes: {
+      'blogs/:blog_id/posts': 'index',
+      'blogs/:blog_id/posts/:id': 'show'
+    },
+    index: function(blog_id) {
+      return this.lastAction = 'Posts#index';
+    },
+    show: function(blog_id, id) {
+      return this.lastAction = 'Posts#show';
+    }
+  });
+  Fixtures.EmptyFilters = Knockback.Controller.extend({
+    routes: {
+      'empty/foo/:id': 'foo'
+    }
+  });
+  Fixtures.SingularFilters = Knockback.Controller.extend({
+    routes: {
+      'singular/foo/:id': 'foo'
+    },
+    filters: {
+      before: 'before_all',
+      after: 'after_all'
+    },
+    before_all: function() {},
+    after_all: function() {}
+  });
+  Fixtures.PluralFilters = Knockback.Controller.extend({
+    routes: {
+      'plural/foo': 'foo'
+    },
+    filters: {
+      before: ['a', 'b', 'c']
+    },
+    a: function() {},
+    b: function() {},
+    c: function() {}
+  });
+  Fixtures.ActionFilters = Knockback.Controller.extend({
+    routes: {
+      'action/foo/bar': 'foo_bar'
+    },
+    filters: {
+      before_foo_bar: 'a',
+      after_foo_bar: ['a', 'b', 'c']
+    },
+    a: function() {},
+    b: function() {},
+    c: function() {}
+  });
+  Fixtures.CombinedFilters = Knockback.Controller.extend({
+    routes: {
+      'combined/foo/bar': 'foo_bar'
+    },
+    filters: {
+      before: ['before_all', 'a'],
+      after: 'after_all',
+      before_foo_bar: 'b',
+      after_foo_bar: ['a', 'b', 'c']
+    },
+    initialize: function(options) {
+      Knockback.Controller.prototype.initialize.apply(this, options);
+      return this.filtersRan = {
+        before: [],
+        after: []
+      };
+    },
+    foo_bar: function() {
+      this.lastAction = 'Combined#foo_bar';
+      return this.actionRan = true;
+    },
+    runFilter: function(name) {
+      var beforeOrAfter;
+      beforeOrAfter = this.actionRan ? 'after' : 'before';
+      return this.filtersRan[beforeOrAfter].push(name);
+    },
+    before_all: function() {
+      return this.runFilter('#before_all');
+    },
+    after_all: function() {
+      return this.runFilter('#after_all');
+    },
+    a: function() {
+      return this.runFilter('#a');
+    },
+    b: function() {
+      return this.runFilter('#b');
+    },
+    c: function() {
+      return this.runFilter('#c');
+    }
+  });
+  Fixtures.ArgFilters = Knockback.Controller.extend({
+    routes: {
+      'arg/foo': 'foo'
+    },
+    filters: {
+      before: 'before',
+      after: 'after'
+    },
+    initialize: function(options) {
+      Knockback.Controller.prototype.initialize.apply(this, options);
+      return this.argumentsGiven = {
+        before: [],
+        after: []
+      };
+    },
+    foo: function() {
+      return 'foo';
+    },
+    before: function() {
+      return this.argumentsGiven.before = Array.prototype.slice.call(arguments);
+    },
+    after: function() {
+      return this.argumentsGiven.after = Array.prototype.slice.call(arguments);
+    }
+  });
   module('Knockback.Model', {
     setup: function() {
       this.modelClass = Knockback.Model;
@@ -504,5 +678,141 @@
     return _.each(events, function(info, eventName) {
       return equal(info.actual, info.expected, "'" + eventName + "' event should be called once, but was called " + info.actual + " times");
     });
+  });
+  module("Knockback.Controller");
+  test("has extend method", function() {
+    ok(Knockback.Controller.extend, "FiltersController should have an 'extend' method");
+    return ok(Fixtures.PostsController.extend, "Fixtures.PostsController should have an 'extend' method");
+  });
+  test("create", function() {
+    new Fixtures.PostsController;
+    return ok(true);
+  });
+  module("Knockback.Controller: initialization", {
+    setup: function() {
+      Backbone.history = new Backbone.History;
+      Backbone.history.options = {
+        root: '/'
+      };
+      this.controller = new Fixtures.PostsController;
+      return this.inverseRoutes = {
+        'index': '/^blogs/([^/]*)/posts$/',
+        'show': '/^blogs/([^/]*)/posts/([^/]*)$/'
+      };
+    },
+    teardown: function() {
+      return delete Backbone.history;
+    }
+  });
+  test("extends Backbone.Router", function() {
+    return _.each(Backbone.Router.prototype, __bind(function(value, propName) {
+      ok(Fixtures.PostsController.prototype[propName], "Knockback.Controller prototype should have the '" + propName + "' property");
+      return ok(this.controller[propName], "Knockback.Controller instance should have the '" + propName + "' property");
+    }, this));
+  });
+  test("inverse routes", function() {
+    return deepEqual(this.controller.inverseRoutes(), this.inverseRoutes);
+  });
+  test("cached inverse routes", function() {
+    this.controller.inverseRoutes();
+    return deepEqual(this.controller._inverseRoutes, this.inverseRoutes);
+  });
+  test("find handler from inverse route", function() {
+    var handlers;
+    handlers = Backbone.history.handlers = [
+      {
+        route: new RegExp('^blogs/([^/]*)/posts$'),
+        callback: function() {}
+      }, {
+        route: new RegExp('^blogs/([^/]*)/posts/([^/]*)$'),
+        callback: function() {}
+      }
+    ];
+    deepEqual(this.controller.handlerForRoute('index'), handlers[0], "should find first handler");
+    return deepEqual(this.controller.handlerForRoute('show'), handlers[1], "should find second handler");
+  });
+  test("return null if no handler found for route", function() {
+    return equal(this.controller.handlerForRoute('asdf'), null);
+  });
+  test("wrap handler callback function with Knockback.Controller filter function", function() {
+    equal(this.controller.handlerForRoute('index').callback, this.controller._wrapped['index'], "index action should have filters");
+    return equal(this.controller.handlerForRoute('show').callback, this.controller._wrapped['show'], "show action should have filters");
+  });
+  test("new handler function wraps original handler function", function() {
+    Backbone.history.loadUrl('blogs/123/posts');
+    equal(this.controller.lastAction, 'Posts#index', 'should call the index action');
+    Backbone.history.loadUrl('blogs/123/posts/456');
+    return equal(this.controller.lastAction, 'Posts#show', 'should call the show action');
+  });
+  module("Knockback.Controller: filtersForAction", {
+    setup: function() {
+      Backbone.history = new Backbone.History;
+      Backbone.history.options = {
+        root: '/'
+      };
+      this.empty = new Fixtures.EmptyFilters;
+      this.singular = new Fixtures.SingularFilters;
+      this.plural = new Fixtures.PluralFilters;
+      this.action = new Fixtures.ActionFilters;
+      return this.combined = new Fixtures.CombinedFilters;
+    },
+    teardown: function() {
+      return delete Backbone.history;
+    }
+  });
+  test("returns empty array by default for all filters", function() {
+    deepEqual(this.empty.filtersForAction('foo', 'before'), []);
+    return deepEqual(this.empty.filtersForAction('foo', 'after'), []);
+  });
+  test("returns an empty array when the filter type is not recognized", function() {
+    deepEqual(this.empty.filtersForAction('foo', 'asdf'), []);
+    return deepEqual(this.empty.filtersForAction('foo'), []);
+  });
+  test("raises an error when the action is not recognized", function() {
+    raises(__bind(function() {
+      return this.combined.filtersForAction('asdf', 'before');
+    }, this));
+    return raises(__bind(function() {
+      return this.combined.filtersForAction(null, 'before');
+    }, this));
+  });
+  test("accepts the name of a single function", function() {
+    deepEqual(this.singular.filtersForAction('foo', 'before'), [this.singular.before_all]);
+    return deepEqual(this.singular.filtersForAction('foo', 'after'), [this.singular.after_all]);
+  });
+  test("accepts an array of function names", function() {
+    return deepEqual(this.plural.filtersForAction('foo', 'before'), [this.plural.a, this.plural.b, this.plural.c]);
+  });
+  test("supports action-specific filters with the 'before_action' and 'after_action' syntax", function() {
+    deepEqual(this.action.filtersForAction('foo_bar', 'before'), [this.action.a]);
+    return deepEqual(this.action.filtersForAction('foo_bar', 'after'), [this.action.a, this.action.b, this.action.c]);
+  });
+  test("combines global filters with action-specific filters", function() {
+    deepEqual(this.combined.filtersForAction('foo_bar', 'before'), [this.combined.before_all, this.combined.a, this.combined.b]);
+    return deepEqual(this.combined.filtersForAction('foo_bar', 'after'), [this.combined.after_all, this.combined.a, this.combined.b, this.combined.c]);
+  });
+  module("Knockback.Controller: running filters", {
+    setup: function() {
+      Backbone.history = new Backbone.History;
+      Backbone.history.options = {
+        root: '/'
+      };
+      this.combined = new Fixtures.CombinedFilters;
+      return this.args = new Fixtures.ArgFilters;
+    },
+    teardown: function() {
+      return delete Backbone.history;
+    }
+  });
+  test("calls all applicable filter functions with the controller as the 'this' object", function() {
+    Backbone.history.loadUrl('combined/foo/bar');
+    equal(this.combined.lastAction, 'Combined#foo_bar');
+    deepEqual(this.combined.filtersRan['before'], ['#before_all', '#a', '#b']);
+    return deepEqual(this.combined.filtersRan['after'], ['#after_all', '#a', '#b', '#c']);
+  });
+  test("arguments to filters are the same as the action's arguments", function() {
+    Backbone.history.loadUrl('arg/foo');
+    deepEqual(this.args.argumentsGiven.before, ['arg/foo']);
+    return deepEqual(this.args.argumentsGiven.after, ['arg/foo']);
   });
 }).call(this);

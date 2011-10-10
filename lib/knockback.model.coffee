@@ -1,5 +1,3 @@
-window.Knockback = {}
-
 Knockback.Model = Backbone.Model.extend
 
   initialize: (attrs, options) ->
