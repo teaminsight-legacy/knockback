@@ -1086,14 +1086,16 @@
   });
   module("Knockback.Controller: initialization", {
     setup: function() {
+      var toRegExp;
       Backbone.history = new Backbone.History;
       Backbone.history.options = {
         root: '/'
       };
       this.controller = new Fixtures.PostsController;
+      toRegExp = Backbone.Router.prototype._routeToRegExp;
       return this.inverseRoutes = {
-        'index': '/^blogs/([^/]*)/posts$/',
-        'show': '/^blogs/([^/]*)/posts/([^/]*)$/'
+        'index': toRegExp('blogs/:blog_id/posts').toString(),
+        'show': toRegExp('blogs/:blog_id/posts/:id').toString()
       };
     },
     teardown: function() {

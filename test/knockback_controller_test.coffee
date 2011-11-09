@@ -16,9 +16,10 @@ module "Knockback.Controller: initialization",
     Backbone.history = new Backbone.History
     Backbone.history.options = root: '/'
     @controller = new Fixtures.PostsController
+    toRegExp = Backbone.Router.prototype._routeToRegExp
     @inverseRoutes =
-      'index': '/^blogs/([^/]*)/posts$/'
-      'show': '/^blogs/([^/]*)/posts/([^/]*)$/'
+      'index': toRegExp('blogs/:blog_id/posts').toString()
+      'show': toRegExp('blogs/:blog_id/posts/:id').toString()
 
   teardown: ->
     delete Backbone.history
