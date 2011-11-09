@@ -129,6 +129,31 @@ test 'throws an error if the id attribute is given as an observable', ->
 
 
 ###################################################################################################
+module "Knockback.Model: dependentObservables"
+
+test 'create dependentObservables for methods on models', ->
+  p = new Fixtures.Post
+  ok p.tagList.__ko_proto__, "'tagList' should be observable"
+  ok p.tagList.getDependenciesCount, "'tagList' should be a dependentObservable"
+
+test 'dependentObservables wrap methods on model', ->
+  p = new Fixtures.Post tags: ['foo', 'bar']
+  equal p.tagList(), 'foo, bar'
+
+test 'raises error if method is not defined on model', ->
+  M = Knockback.Model.extend
+    observables:
+      foo: ->
+  raises (-> new M), /cannot create dependentObservable because model has no method 'foo'/
+
+test 'raises error if method is a Backbone.Model or Knockback.Model method', ->
+  M = Knockback.Model.extend
+    observables:
+      save: ->
+  raises (-> new M), /dependentObservable would override base class method 'save'/
+
+
+###################################################################################################
 module "Knockback.Model: unspecified attributes"
 
 test "observables should be created for unspecified attributes", ->
@@ -187,7 +212,7 @@ test "raise exception if relation model is not defined", ->
   SomeModel = Knockback.Model.extend
     relations:
       foo: 'Foo'
-  raises (-> new SomeModel), /class 'Foo' is not defined for the 'foo' relation/
+  raises (-> new SomeModel), /sourceClass 'Foo' is not defined/
 
 test 'throws an error if a relation would overwrite an existing property', ->
   SomeModel = Knockback.Model.extend
@@ -201,29 +226,34 @@ module "Knockback.Model: belongsTo relation"
 
 test "create empty model for relation", ->
   p = new Fixtures.Post
-  equal p.author.constructor.prototype, Fixtures.Author.prototype
-  equal p.author.name(), ""
+  equal p.author.ref().constructor.prototype, Fixtures.Author.prototype
+  equal p.author.ref().name(), ""
 
 test "creates an observable '_display' method", ->
   p = new Fixtures.Post
   ok p.author_display, "model should have 'author_display' property"
   ok p.author_display.__ko_proto__, "'author_display' property should be an observable"
-  equal p.author_display(), p.author
+  model = p.author.ref()
+  equal p.author_display(), model
+
+test "initial value for _display method is an empty object", ->
+  p = new Fixtures.Post
+  deepEqual {}, p.author_display()
 
 test "initialize belongsTo relation with nested attributes", ->
   p = new Fixtures.Post author: name: 'Foo Bar'
-  equal(p.author.name(), 'Foo Bar')
+  equal(p.author.ref().name(), 'Foo Bar')
   equal(p.author_display().name(), 'Foo Bar')
 
 test "attribute change updates related model's attributes", ->
   expect 3
   p = new Fixtures.Post
-  p.author.name.subscribe ->
+  p.author.ref().name.subscribe ->
     ok true
-  p.author.bind 'change:name', ->
+  p.author.ref().bind 'change:name', ->
     ok true
   p.set author: name: 'Foo Bar'
-  equal p.author.name(), 'Foo Bar'
+  equal p.author.ref().name(), 'Foo Bar'
 
 
 ####################################################################################################
@@ -234,57 +264,63 @@ module "Knockback.Model: hasMany relation",
 
 test "relation method is a backbone collection", ->
   ok @post.comments, "model should have a 'comments' property"
-  ok @post.comments.models, "'comments' property should be a backbone collection"
-  ok @post.comments.constructor.prototype, Fixtures.CommentsCollection.prototype
-  deepEqual @post.comments.models, []
+  ok @post.comments.ref().models, "'comments' property should be a backbone collection"
+  ok @post.comments.ref().constructor.prototype, Fixtures.CommentsCollection.prototype
+  deepEqual @post.comments.ref().models, []
 
 test "creates an observableArray '_display' method", ->
   ok @post.comments_display, "model should have a 'comments_display' property"
   ok @post.comments_display.__ko_proto__, "'comments_display' property should be an observable"
   ok @post.comments_display.push, "'comments_display' property should be an observableArray"
-  equal @post.comments_display(), @post.comments.models
+  deepEqual @post.comments_display(), []
+  deepEqual @post.comments.ref().models, []
+  deepEqual @post.comments_display(), @post.comments.ref().models
+
+test "initial value for _display method is an empty array", ->
+  p = new Fixtures.Post
+  deepEqual [], p.comments_display()
 
 test "initialize hasMany relation with nested array of attributes", ->
   p = new Fixtures.Post comments: @comments
-  deepEqual _.pluck(p.comments.models, 'attributes'), @comments
+  deepEqual _.pluck(p.comments.ref().models, 'attributes'), @comments
   deepEqual _.pluck(p.comments_display(), 'attributes'), @comments
 
 test "collection resets when attribute changes", ->
   expect 3
   @post.bind 'change:comments', ->
     ok true
-  @post.comments.bind 'reset', ->
+  @post.comments.ref().bind 'reset', ->
     ok true
   @post.set comments: @comments
-  deepEqual _.pluck(@post.comments.models, 'attributes'), @comments
+  deepEqual _.pluck(@post.comments.ref().models, 'attributes'), @comments
 
 test "knockout binding updates when collection is reset", ->
   expect 3
-  @post.comments.bind 'reset', ->
+  @post.comments.ref().bind 'reset', ->
     ok true
   @post.comments_display.subscribe ->
     ok true
-  @post.comments.reset @comments
+  @post.comments.ref().reset @comments
   deepEqual _.pluck(@post.comments_display(), 'attributes'), @comments
 
 test "knockout binding updates when an item is added to the collection", ->
   expect 4
-  @post.comments.bind 'add', ->
+  @post.comments.ref().bind 'add', ->
     ok true, "comments 'add' event was triggered"
   @post.comments_display.subscribe ->
     # expecting this event to be called twice because comments are sorted after being added
     ok true, "comments_display 'subscribe' event was triggered"
-  @post.comments.add @comments[0]
+  @post.comments.ref().add @comments[0]
   deepEqual _.pluck(@post.comments_display(), 'attributes'), [@comments[0]]
 
 test "knockout binding updates when an item is removed from the collection", ->
   expect 3
-  @post.comments.reset @comments
-  @post.comments.bind 'remove', ->
+  @post.comments.ref().reset @comments
+  @post.comments.ref().bind 'remove', ->
     ok true, "comments 'remove' event was triggered"
   @post.comments_display.subscribe ->
     ok true, "comments_display 'subscribe' event was triggered"
-  @post.comments.remove @post.comments.first()
+  @post.comments.ref().remove @post.comments.ref().first()
   deepEqual _.pluck(@post.comments_display(), 'attributes'), [@comments[1]]
 
 test "knockout binding is sorted by position", ->
@@ -294,7 +330,7 @@ test "knockout binding is sorted by position", ->
     {content: 'foo', position:1},
     {content: 'baz', position:4}
   ]
-  @post.comments.add positionalComments
+  @post.comments.ref().add positionalComments
   commentsOrder = _.map @post.comments_display(), (comment) ->
     comment.position()
 
@@ -303,6 +339,13 @@ test "knockout binding is sorted by position", ->
     ok comment.position() > lastPosition,
       "comments_display() should display comments in order, but order was [#{commentsOrder}]"
     lastPosition = comment.position()
+
+
+###################################################################################################
+module 'Knockback.Model: circular relations'
+
+test 'should not cause a stack overflow', ->
+  new Fixtures.Circular1
 
 
 ###################################################################################################
@@ -339,15 +382,15 @@ test "should update associations after save", ->
   @response.post = _.extend @response.post, @relations
   Fixtures.BackboneSyncResponse = @response
   @post.save()
-  equal @post.author.name(), 'Joe Test'
-  deepEqual @post.comments.pluck('content'), ['foo']
+  equal @post.author.ref().name(), 'Joe Test'
+  deepEqual @post.comments.ref().pluck('content'), ['foo']
 
 test "should look for relations in top level of response", ->
   @response = _.extend @response, @relations
   Fixtures.BackboneSyncResponse = @response
   @post.save()
-  equal @post.author.name(), 'Joe Test'
-  deepEqual @post.comments.pluck('content'), ['foo']
+  equal @post.author.ref().name(), 'Joe Test'
+  deepEqual @post.comments.ref().pluck('content'), ['foo']
 
 test "should trigger events for model and relations after save", ->
   events =
@@ -364,9 +407,9 @@ test "should trigger events for model and relations after save", ->
 
   @post.bind 'change', -> events['post/change'].actual += 1
   @post.bind 'change:name', -> events['post/change:name'].actual += 1
-  @post.author.bind 'change', -> events['author/change'].actual += 1
-  @post.comments.bind 'add', -> events['comments/add'].actual += 1
-  @post.comments.bind 'reset', -> events['comments/reset'].actual += 1
+  @post.author.ref().bind 'change', -> events['author/change'].actual += 1
+  @post.comments.ref().bind 'add', -> events['comments/add'].actual += 1
+  @post.comments.ref().bind 'reset', -> events['comments/reset'].actual += 1
 
   @response = _.extend @response, @relations
   Fixtures.BackboneSyncResponse = @response
@@ -375,4 +418,90 @@ test "should trigger events for model and relations after save", ->
   _.each events, (info, eventName) ->
     equal info.actual, info.expected,
       "'#{eventName}' event should be called once, but was called #{info.actual} times"
+
+
+###################################################################################################
+module 'Knockback.Model#includeObservables',
+  setup: ->
+    @modelClass = Knockback.Model.extend
+      observables:
+        foo: 'foo'
+        bar: 'bar'
+    @model = new @modelClass
+
+    @presenterMethods =
+      fooBar: ->
+        "#{@foo()} #{@bar()}"
+      barFoo: ->
+        "#{@bar()} #{@foo()}"
+      qwerty: 3
+
+test 'creates a dependentObservable for each function in the object', ->
+  @model.includeObservables(@presenterMethods)
+  ok @model.fooBar, 'model should have a #fooBar method'
+  ok @model.fooBar.__ko_proto__, '#fooBar should be observable'
+  ok @model.barFoo, 'model should have a #barFoo method'
+  ok @model.fooBar.__ko_proto__, '#barFoo should be observable'
+  equal @model.fooBar(), 'foo bar'
+  equal @model.barFoo(), 'bar foo'
+
+test "the dependentObservable return value changes when the model's attributes change", ->
+  @model.includeObservables(@presenterMethods)
+  @model.set foo: 'bananas'
+  equal @model.fooBar(), 'bananas bar'
+
+test 'skips object keys that are not functions', ->
+  try
+    @model.includeObservables(@presenterMethods)
+    ok !@model.qwerty, 'model should not have a #qwerty property'
+  catch ex
+    ok false, 'should not throw an exception'
+
+test 'raises exception if a method with the same name already exists on the model', ->
+  P = save: -> 'me'
+  raises (=> @model.includeObservables(P)), /dependentObservable would overwrite existing property or method: 'save'/
+
+test 'merges methods from multiple objects', ->
+  A =
+    fooBar: -> 'AAAAAA'
+    really: -> 'really?'
+  B =
+    really: -> 'REALLY?!?!'
+    inspect: -> "foo: #{@foo()}, bar: #{@bar()}"
+
+  @model.includeObservables(@presenterMethods, A, B)
+  equal @model.fooBar(), 'AAAAAA'
+  equal @model.barFoo(), 'bar foo'
+  equal @model.really(), 'REALLY?!?!'
+  equal @model.inspect(), 'foo: foo, bar: bar'
+
+
+###################################################################################################
+module 'Knockback.Model deferred evaluation of dependent observables'
+  setup: ->
+    @dependentObservables = depObs =
+      informFunction: ->
+        window.evaluationPerformed = true
+        42
+
+    @modelClass = Knockback.Model.extend
+      observables:
+        inform: ->
+      inform: depObs.informFunction
+
+    @model = new @modelClass
+
+  teardown: ->
+    delete window.evaluationPerformed
+
+test 'specified in model', ->
+  ok !window.evaluationPerformed, 'evaluation function should not have been called yet'
+  equal 42, @model.inform()
+  equal true, window.evaluationPerformed, 'evaluation function should have been called'
+
+test 'included in model', ->
+  @model.includeObservables(@dependentObservables)
+  ok !window.evaluationPerformed, 'evaluation function should not have been called yet'
+  equal 42, @model.informFunction()
+  equal true, window.evaluationPerformed, 'evaluation function should have been called'
 

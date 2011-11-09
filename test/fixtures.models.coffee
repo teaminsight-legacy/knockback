@@ -11,10 +11,14 @@ Fixtures.Post = Knockback.Model.extend
     name: ""
     tags: []
     meta: {}
+    tagList: ->
 
   relations:
     author: 'Fixtures.Author'
     comments: 'Fixtures.CommentsCollection'
+
+  tagList: ->
+    @tags().join(', ')
 
 Fixtures.Post.prototype.sync = Fixtures.testSync
 
@@ -55,3 +59,10 @@ Fixtures.IgnoreProxyModel = Knockback.Model.extend
     @x = 23
     Knockback.Model.prototype.initialize.apply @, [attrs, options]
 
+Fixtures.Circular1 = Knockback.Model.extend
+  relations:
+    other: 'Fixtures.Circular2'
+
+Fixtures.Circular2 = Knockback.Model.extend
+  relations:
+    other: 'Fixtures.Circular1'

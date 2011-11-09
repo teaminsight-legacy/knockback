@@ -15,6 +15,7 @@ def build_knockback_test
     'test/fixtures.coffee',
     'test/fixtures.models.coffee',
     'test/fixtures.controllers.coffee',
+    'test/knockback_relation_test.coffee',
     'test/knockback_model_test.coffee',
     'test/knockback_controller_test.coffee'
   ]
@@ -24,6 +25,7 @@ end
 def build_knockback
   knockback_files = [
     'lib/knockback.coffee',
+    'lib/knockback.relation.coffee',
     'lib/knockback.model.coffee',
     'lib/knockback.controller.coffee',
   ]

@@ -1,30 +1,121 @@
 (function() {
   var __bind = function(fn, me){ return function(){ return fn.apply(me, arguments); }; }, __slice = Array.prototype.slice;
   window.Knockback = {};
+  Knockback.objectReferenceFor = function(className) {
+    var components, identifier, namespace;
+    namespace = window;
+    components = className.split('.');
+    while (identifier = components.shift()) {
+      namespace = namespace[identifier];
+    }
+    return namespace;
+  };
+  Knockback.Relation = (function() {
+    function Relation(config) {
+      if (config == null) {
+        config = {};
+      }
+      if (!config.name) {
+        throw "you must specify a relation's 'name' property";
+      }
+      if (!config.sourceClass) {
+        throw "you must specify a relation's 'sourceClass' property";
+      }
+      if (!config.target) {
+        throw "you must specify a relation's 'target' property";
+      }
+      this.name = config.name;
+      this.target = config.target;
+      this.sourceClass = config.sourceClass;
+      this.displayName = config.displayName;
+      this.inverse = config.inverse;
+    }
+    Relation.prototype.sourceConstructor = function() {
+      var constructor;
+      constructor = Knockback.objectReferenceFor(this.sourceClass);
+      if (!constructor) {
+        throw "sourceClass '" + this.sourceClass + "' is not defined";
+      }
+      return constructor;
+    };
+    Relation.prototype.ref = function() {
+      var nestedAttrs, source;
+      if (this._cached) {
+        return this._cached;
+      }
+      nestedAttrs = this.target.get(this.name);
+      source = new (this.sourceConstructor());
+      if (source.attributes) {
+        this._sourceModel(source, nestedAttrs);
+      } else if (source.models) {
+        this._sourceCollection(source, nestedAttrs);
+      }
+      return this._cached = source;
+    };
+    Relation.prototype._sourceModel = function(source, attrs) {
+      source.set(attrs);
+      return this.target["" + this.name + "_display"](source);
+    };
+    Relation.prototype._sourceCollection = function(source, models) {
+      var display;
+      display = this.target["" + this.name + "_display"];
+      source.bind('reset', function() {
+        return display(source.models);
+      });
+      source.bind('remove', function() {
+        return display(source.models);
+      });
+      source.bind('add', function() {
+        display(source.models);
+        return display.sort(function(m1, m2) {
+          if (m1.position) {
+            return m1.position() - m2.position();
+          }
+        });
+      });
+      if (models) {
+        return source.reset(models);
+      }
+    };
+    return Relation;
+  })();
   Knockback.Model = Backbone.Model.extend({
     initialize: function(attrs, options) {
       this._bindProxiedMethods();
+      this._initRelations(attrs, options);
       return this._initAttributes(attrs, options);
     },
     set: function(attrs, options) {
       if (!Backbone.Model.prototype.set.apply(this, [attrs, options])) {
         return false;
       }
-      if (!this._relationsInitialized) {
-        this._initRelations(attrs, options);
-      }
-      _.each(attrs, __bind(function(value, key) {
-        var related;
-        if (this.relations[key] && this[key]) {
-          related = this[key];
-          if (related.set) {
-            return related.set(value, options);
-          } else if (related.reset) {
-            return related.reset(value, options);
+      if (this._relationsInitialized) {
+        _.each(attrs, __bind(function(value, key) {
+          var relation;
+          if (this.relations[key] && this[key]) {
+            relation = this[key].ref(true);
+            if (relation.set) {
+              return relation.set(value, options);
+            } else if (relation.reset) {
+              return relation.reset(value, options);
+            }
           }
-        }
-      }, this));
+        }, this));
+      }
       return this;
+    },
+    includeObservables: function() {
+      var obj, objs;
+      objs = 1 <= arguments.length ? __slice.call(arguments, 0) : [];
+      obj = _.extend.apply(_, [{}].concat(__slice.call(objs)));
+      return _.each(_.functions(obj), __bind(function(method) {
+        if (this[method]) {
+          throw "dependentObservable would overwrite existing property or method: '" + method + "'";
+        }
+        return this[method] = ko.dependentObservable(obj[method], this, {
+          deferEvaluation: true
+        });
+      }, this));
     },
     parse: function(response, xhr) {
       var responseAttrs;
@@ -60,13 +151,26 @@
       _.each(this.observables, __bind(function(value, key) {
         var safeValue;
         safeValue = attrs[key] ? attrs[key] : value && typeof value === 'object' ? _.clone(value) : value;
-        return newAttrs[key] = safeValue;
+        if (!_.isFunction(value)) {
+          return newAttrs[key] = safeValue;
+        }
       }, this));
       allAttrs = _.extend(newAttrs, attrs);
       _.each(allAttrs, __bind(function(value, key) {
         if (!this._wouldOverwriteExistingProperty(key, !!this.observables[key])) {
           return this._initObservable(key, value);
         }
+      }, this));
+      _.each(_.functions(this.observables), __bind(function(methodName) {
+        if (!this[methodName]) {
+          throw "cannot create dependentObservable because model has no method '" + methodName + "'";
+        }
+        if (Knockback.Model.prototype[methodName]) {
+          throw "dependentObservable would override base class method '" + methodName + "'";
+        }
+        return this[methodName] = ko.dependentObservable(this[methodName], this, {
+          deferEvaluation: true
+        });
       }, this));
       return this.set(allAttrs, options);
     },
@@ -103,49 +207,23 @@
     _initRelations: function(attrs, options) {
       this.relations = this.relations || {};
       _.each(this.relations, __bind(function(className, relationName) {
-        var display, klass, relation;
+        var klass, relation;
         if (this[relationName]) {
           throw "relation '" + relationName + "' would overwrite an existing property or method";
         }
-        klass = this._modelFromClassName(className);
-        if (!klass) {
-          throw "class '" + className + "' is not defined for the '" + relationName + "' relation";
-        }
-        relation = this[relationName] = new klass;
-        if (relation.set) {
-          this["" + relationName + "_display"] = ko.observable(relation);
-          return relation.set(attrs[relationName]);
-        } else if (relation.reset) {
-          display = this["" + relationName + "_display"] = ko.observableArray(relation.models);
-          relation.bind('reset', __bind(function() {
-            return display(relation.models);
-          }, this));
-          relation.bind('add', __bind(function() {
-            display(relation.models);
-            return display.sort(function(m1, m2) {
-              if (m1.position) {
-                return m1.position() - m2.position();
-              }
-            });
-          }, this));
-          relation.bind('remove', __bind(function() {
-            return display(relation.models);
-          }, this));
-          if (attrs[relationName]) {
-            return relation.reset(attrs[relationName]);
-          }
+        relation = this[relationName] = new Knockback.Relation({
+          name: relationName,
+          sourceClass: className,
+          target: this
+        });
+        klass = relation.sourceConstructor();
+        if (klass.prototype.set) {
+          return this["" + relationName + "_display"] = ko.observable({});
+        } else if (klass.prototype.reset) {
+          return this["" + relationName + "_display"] = ko.observableArray();
         }
       }, this));
       return this._relationsInitialized = true;
-    },
-    _modelFromClassName: function(className) {
-      var components, identifier, namespace;
-      namespace = window;
-      components = className.split('.');
-      while (identifier = components.shift()) {
-        namespace = namespace[identifier];
-      }
-      return namespace;
     }
   });
   Knockback.Controller = Backbone.Router.extend({

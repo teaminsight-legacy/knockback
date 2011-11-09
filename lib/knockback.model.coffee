@@ -2,24 +2,30 @@ Knockback.Model = Backbone.Model.extend
 
   initialize: (attrs, options) ->
     @_bindProxiedMethods()
+    @_initRelations attrs, options
     @_initAttributes attrs, options
 
   set: (attrs, options) ->
     return false unless Backbone.Model.prototype.set.apply @, [attrs, options]
 
-    # backbone calls set before initialize, so we need to initialize are relations here
-    @_initRelations(attrs, options) unless @_relationsInitialized
-
     # keep related models in sync
-    _.each attrs, (value, key) =>
-      if @relations[key] and @[key]
-        related = @[key]
-        if related.set
-          related.set value, options # belongsTo
-        else if related.reset
-          related.reset value, options # hasMany
+    if @_relationsInitialized
+      _.each attrs, (value, key) =>
+        if @relations[key] and @[key]
+          relation = @[key].ref(true)
+          if relation.set
+            relation.set value, options # belongsTo
+          else if relation.reset
+            relation.reset value, options # hasMany
 
     return this
+
+  includeObservables: (objs...) ->
+    obj = _.extend {}, objs...
+    _.each _.functions(obj), (method) =>
+      if @[method]
+        throw "dependentObservable would overwrite existing property or method: '#{method}'"
+      @[method] = ko.dependentObservable(obj[method], @, deferEvaluation: true)
 
   parse: (response, xhr) ->
     if @ajaxPrefix
@@ -57,7 +63,7 @@ Knockback.Model = Backbone.Model.extend
         _.clone(value) # mutable objects should be cloned
       else
         value
-      newAttrs[key] = safeValue
+      newAttrs[key] = safeValue unless _.isFunction(value)
 
     allAttrs = _.extend(newAttrs, attrs)
     # Create observables for all attributes, even if they are not listed in observables.
@@ -65,6 +71,14 @@ Knockback.Model = Backbone.Model.extend
     _.each allAttrs, (value, key) =>
       unless @_wouldOverwriteExistingProperty(key, not not @observables[key])
         @_initObservable(key, value)
+
+    _.each _.functions(@observables), (methodName) =>
+      unless @[methodName]
+        throw "cannot create dependentObservable because model has no method '#{methodName}'"
+      if Knockback.Model.prototype[methodName]
+        throw "dependentObservable would override base class method '#{methodName}'"
+
+      @[methodName] = ko.dependentObservable(@[methodName], @, deferEvaluation: true)
 
     @set allAttrs, options
 
@@ -104,35 +118,16 @@ Knockback.Model = Backbone.Model.extend
       if @[relationName]
         throw "relation '#{relationName}' would overwrite an existing property or method"
 
-      klass = @_modelFromClassName className
-      if not klass
-        throw "class '#{className}' is not defined for the '#{relationName}' relation"
+      relation = @[relationName] = new Knockback.Relation
+        name: relationName
+        sourceClass: className
+        target: @
 
-      relation = @[relationName] = new klass
-
-      if relation.set # belongsTo relation
-        @["#{relationName}_display"] = ko.observable(relation)
-        relation.set attrs[relationName]
-      else if relation.reset
-        display = @["#{relationName}_display"] = ko.observableArray(relation.models)
-        relation.bind 'reset', =>
-          display(relation.models)
-        relation.bind 'add', =>
-          display(relation.models)
-          display.sort (m1, m2) ->  m1.position() - m2.position() if m1.position
-        relation.bind 'remove', =>
-          display(relation.models)
-        relation.reset attrs[relationName] if attrs[relationName]
+      klass = relation.sourceConstructor()
+      if klass.prototype.set # singular relation
+        @["#{relationName}_display"] = ko.observable({})
+      else if klass.prototype.reset
+        @["#{relationName}_display"] = ko.observableArray()
 
     @_relationsInitialized = true
 
-  # Finds the JavaScript object given in the className string without using eval.
-  # For example, passing 'Foo.Bar.Model' would find and return window.Foo.Bar.Model.
-  # This method is needed to allow our backbone models to refer to related models before those
-  # models are defined.
-  _modelFromClassName: (className) ->
-    namespace = window
-    components = className.split('.')
-    while identifier = components.shift()
-      namespace = namespace[identifier]
-    namespace

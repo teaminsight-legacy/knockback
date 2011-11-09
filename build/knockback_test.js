@@ -9,11 +9,15 @@
     observables: {
       name: "",
       tags: [],
-      meta: {}
+      meta: {},
+      tagList: function() {}
     },
     relations: {
       author: 'Fixtures.Author',
       comments: 'Fixtures.CommentsCollection'
+    },
+    tagList: function() {
+      return this.tags().join(', ');
     }
   });
   Fixtures.Post.prototype.sync = Fixtures.testSync;
@@ -54,6 +58,16 @@
     initialize: function(attrs, options) {
       this.x = 23;
       return Knockback.Model.prototype.initialize.apply(this, [attrs, options]);
+    }
+  });
+  Fixtures.Circular1 = Knockback.Model.extend({
+    relations: {
+      other: 'Fixtures.Circular2'
+    }
+  });
+  Fixtures.Circular2 = Knockback.Model.extend({
+    relations: {
+      other: 'Fixtures.Circular1'
     }
   });
   Fixtures.PostsController = Knockback.Controller.extend({
@@ -173,6 +187,224 @@
     after: function() {
       return this.argumentsGiven.after = Array.prototype.slice.call(arguments);
     }
+  });
+  module('Knockback.Relation', {
+    setup: function() {
+      return this.relation = new Knockback.Relation({
+        name: 'foo',
+        sourceClass: 'Foo',
+        target: {}
+      });
+    }
+  });
+  test('should be an object', function() {
+    return ok(this.relation);
+  });
+  test('public methods', function() {
+    var instanceMethods;
+    instanceMethods = ['ref', 'sourceConstructor'];
+    return _.each(instanceMethods, __bind(function(method) {
+      return ok(this.relation[method], "relation should have the '" + method + "' instance method");
+    }, this));
+  });
+  module('Knockback.Relation#constructor');
+  test('sets instance variables', function() {
+    var config, relation;
+    config = {
+      name: 'foo',
+      sourceClass: 'Foo',
+      displayName: 'foo_display',
+      inverse: 'bar',
+      target: {
+        foo: 'bar'
+      }
+    };
+    relation = new Knockback.Relation(config);
+    return _.each(config, __bind(function(v, k) {
+      return equal(relation[k], v);
+    }, this));
+  });
+  test("requires 'name' in config", function() {
+    return raises((function() {
+      return new Knockback.Relation;
+    }), /you must specify a relation's 'name' property/);
+  });
+  test("requires 'sourceClass' in config", function() {
+    return raises((function() {
+      return new Knockback.Relation({
+        name: 'foo'
+      });
+    }), /you must specify a relation's 'sourceClass' property/);
+  });
+  test("requires 'target' object in config", function() {
+    return raises((function() {
+      return new Knockback.Relation({
+        name: 'foo',
+        sourceClass: 'Foo'
+      });
+    }), /you must specify a relation's 'target' property/);
+  });
+  module('Knockback.Relation#sourceConstructor', {
+    setup: function() {
+      return this.relation = new Knockback.Relation({
+        name: 'foo',
+        sourceClass: 'Fixtures.Post',
+        target: {}
+      });
+    }
+  });
+  test('returns the constructor for the sourceClass', function() {
+    return equal(this.relation.sourceConstructor(), Fixtures.Post);
+  });
+  test('raises exception if sourceClass is not defined', function() {
+    var rel;
+    rel = new Knockback.Relation({
+      name: 'foo',
+      sourceClass: 'Abcdefghijklmnopqrstuvwxyz',
+      target: {}
+    });
+    return raises((function() {
+      return rel.sourceConstructor();
+    }), /sourceClass 'Abcdefghijklmnopqrstuvwxyz' is not defined/);
+  });
+  module('Knockback.Relation#ref', {
+    setup: function() {
+      this.target = new Fixtures.Post;
+      this.relationConfig = {
+        name: 'author',
+        sourceClass: 'Fixtures.Author',
+        target: this.target
+      };
+      return this.relation = new Knockback.Relation(this.relationConfig);
+    }
+  });
+  test('raise exception is sourceClass is not defined', function() {
+    var rel;
+    this.relationConfig.sourceClass = 'Abcdefghijklmnopqrstuvwxyz';
+    rel = new Knockback.Relation(this.relationConfig);
+    return raises((function() {
+      return rel.ref();
+    }), /sourceClass 'Abcdefghijklmnopqrstuvwxyz' is not defined/);
+  });
+  test('returns an instance of sourceClass', function() {
+    return equal(this.relation.ref().constructor, Fixtures.Author);
+  });
+  test('caches the instance', function() {
+    this.relation.ref();
+    equal(this.relation._cached.constructor, Fixtures.Author);
+    return equal(this.relation.ref().constructor, Fixtures.Author);
+  });
+  module('Knockback.Relation#ref for singular relations', {
+    setup: function() {
+      this.targetAttributes = {
+        name: 'First Post',
+        author: {
+          name: 'Joe Test'
+        }
+      };
+      this.target = new Fixtures.Post;
+      this.relationConfig = {
+        name: 'author',
+        sourceClass: 'Fixtures.Author',
+        target: this.target
+      };
+      return this.relation = new Knockback.Relation(this.relationConfig);
+    }
+  });
+  test('source model is initialized with default attributes by default', function() {
+    return deepEqual(this.relation.ref().attributes, {
+      name: ''
+    });
+  });
+  test('source model is initialized using nested attributes on the target model', function() {
+    var rel;
+    this.relationConfig.target = new Fixtures.Post(this.targetAttributes);
+    rel = new Knockback.Relation(this.relationConfig);
+    return equal(rel.ref().get('name'), 'Joe Test');
+  });
+  test('calls the #{name}_display method on the target with the source model', function() {
+    return equal(this.relation.ref(), this.target.author_display());
+  });
+  module('Knockback.Relation#ref for plural relations', {
+    setup: function() {
+      this.targetAttributes = {
+        name: 'First Post',
+        comments: [
+          {
+            content: 'foo'
+          }, {
+            content: 'bar'
+          }
+        ]
+      };
+      this.target = new Fixtures.Post(this.targetAttributes);
+      this.relationConfig = {
+        name: 'comments',
+        sourceClass: 'Fixtures.CommentsCollection',
+        target: this.target
+      };
+      return this.relation = new Knockback.Relation(this.relationConfig);
+    }
+  });
+  test('source collection is initialized with an empty array by default', function() {
+    var rel;
+    this.relationConfig.target = new Fixtures.Post;
+    rel = new Knockback.Relation(this.relationConfig);
+    return deepEqual(rel.ref().models, []);
+  });
+  test('initializes the source collection based on nested attributes', function() {
+    return deepEqual(this.relation.ref().pluck('content'), ['foo', 'bar']);
+  });
+  test('calls the #{name}_display method on the target with the source collection', function() {
+    return deepEqual(this.relation.ref().models, this.target.comments_display());
+  });
+  test('target#{name}_display updates when source collection is reset', function() {
+    var comments, commentsCollection, newComments;
+    expect(2);
+    commentsCollection = this.relation.ref();
+    newComments = [
+      {
+        content: 'yay'
+      }, {
+        content: 'nay'
+      }
+    ];
+    this.target.comments_display.subscribe(function() {
+      return ok(true, "triggered comments_display 'subscribe' event");
+    });
+    commentsCollection.reset(newComments);
+    comments = _.map(this.target.comments_display(), function(c) {
+      return c.get('content');
+    });
+    return deepEqual(comments, ['yay', 'nay']);
+  });
+  test('target#{name}_display updates when an item is added to the source collection', function() {
+    var comments, commentsCollection;
+    expect(3);
+    commentsCollection = this.relation.ref();
+    this.target.comments_display.subscribe(function() {
+      return ok(true, "triggered comments_display 'subscribe' event");
+    });
+    commentsCollection.add({
+      content: 'added'
+    });
+    comments = _.map(this.target.comments_display(), function(c) {
+      return c.get('content');
+    });
+    return deepEqual(comments, ['foo', 'bar', 'added']);
+  });
+  test('target#{name}_display updates when an item is removed from the source collection', function() {
+    var comments, commentsCollection;
+    expect(2);
+    commentsCollection = this.relation.ref();
+    this.target.comments_display.subscribe(function() {
+      return ok(true, "triggered comments_display 'subscribe' event");
+    });
+    commentsCollection.remove(this.relation.ref().first());
+    comments = _.map(this.target.comments_display(), function(c) {
+      return c.get('content');
+    });
+    return deepEqual(comments, ['bar']);
   });
   module('Knockback.Model', {
     setup: function() {
@@ -344,6 +576,42 @@
       return new SomeModel;
     });
   });
+  module("Knockback.Model: dependentObservables");
+  test('create dependentObservables for methods on models', function() {
+    var p;
+    p = new Fixtures.Post;
+    ok(p.tagList.__ko_proto__, "'tagList' should be observable");
+    return ok(p.tagList.getDependenciesCount, "'tagList' should be a dependentObservable");
+  });
+  test('dependentObservables wrap methods on model', function() {
+    var p;
+    p = new Fixtures.Post({
+      tags: ['foo', 'bar']
+    });
+    return equal(p.tagList(), 'foo, bar');
+  });
+  test('raises error if method is not defined on model', function() {
+    var M;
+    M = Knockback.Model.extend({
+      observables: {
+        foo: function() {}
+      }
+    });
+    return raises((function() {
+      return new M;
+    }), /cannot create dependentObservable because model has no method 'foo'/);
+  });
+  test('raises error if method is a Backbone.Model or Knockback.Model method', function() {
+    var M;
+    M = Knockback.Model.extend({
+      observables: {
+        save: function() {}
+      }
+    });
+    return raises((function() {
+      return new M;
+    }), /dependentObservable would override base class method 'save'/);
+  });
   module("Knockback.Model: unspecified attributes");
   test("observables should be created for unspecified attributes", function() {
     var p;
@@ -419,7 +687,7 @@
     });
     return raises((function() {
       return new SomeModel;
-    }), /class 'Foo' is not defined for the 'foo' relation/);
+    }), /sourceClass 'Foo' is not defined/);
   });
   test('throws an error if a relation would overwrite an existing property', function() {
     var SomeModel;
@@ -436,15 +704,21 @@
   test("create empty model for relation", function() {
     var p;
     p = new Fixtures.Post;
-    equal(p.author.constructor.prototype, Fixtures.Author.prototype);
-    return equal(p.author.name(), "");
+    equal(p.author.ref().constructor.prototype, Fixtures.Author.prototype);
+    return equal(p.author.ref().name(), "");
   });
   test("creates an observable '_display' method", function() {
-    var p;
+    var model, p;
     p = new Fixtures.Post;
     ok(p.author_display, "model should have 'author_display' property");
     ok(p.author_display.__ko_proto__, "'author_display' property should be an observable");
-    return equal(p.author_display(), p.author);
+    model = p.author.ref();
+    return equal(p.author_display(), model);
+  });
+  test("initial value for _display method is an empty object", function() {
+    var p;
+    p = new Fixtures.Post;
+    return deepEqual({}, p.author_display());
   });
   test("initialize belongsTo relation with nested attributes", function() {
     var p;
@@ -453,17 +727,17 @@
         name: 'Foo Bar'
       }
     });
-    equal(p.author.name(), 'Foo Bar');
+    equal(p.author.ref().name(), 'Foo Bar');
     return equal(p.author_display().name(), 'Foo Bar');
   });
   test("attribute change updates related model's attributes", function() {
     var p;
     expect(3);
     p = new Fixtures.Post;
-    p.author.name.subscribe(function() {
+    p.author.ref().name.subscribe(function() {
       return ok(true);
     });
-    p.author.bind('change:name', function() {
+    p.author.ref().bind('change:name', function() {
       return ok(true);
     });
     p.set({
@@ -471,7 +745,7 @@
         name: 'Foo Bar'
       }
     });
-    return equal(p.author.name(), 'Foo Bar');
+    return equal(p.author.ref().name(), 'Foo Bar');
   });
   module("Knockback.Model: hasMany relation", {
     setup: function() {
@@ -489,22 +763,29 @@
   });
   test("relation method is a backbone collection", function() {
     ok(this.post.comments, "model should have a 'comments' property");
-    ok(this.post.comments.models, "'comments' property should be a backbone collection");
-    ok(this.post.comments.constructor.prototype, Fixtures.CommentsCollection.prototype);
-    return deepEqual(this.post.comments.models, []);
+    ok(this.post.comments.ref().models, "'comments' property should be a backbone collection");
+    ok(this.post.comments.ref().constructor.prototype, Fixtures.CommentsCollection.prototype);
+    return deepEqual(this.post.comments.ref().models, []);
   });
   test("creates an observableArray '_display' method", function() {
     ok(this.post.comments_display, "model should have a 'comments_display' property");
     ok(this.post.comments_display.__ko_proto__, "'comments_display' property should be an observable");
     ok(this.post.comments_display.push, "'comments_display' property should be an observableArray");
-    return equal(this.post.comments_display(), this.post.comments.models);
+    deepEqual(this.post.comments_display(), []);
+    deepEqual(this.post.comments.ref().models, []);
+    return deepEqual(this.post.comments_display(), this.post.comments.ref().models);
+  });
+  test("initial value for _display method is an empty array", function() {
+    var p;
+    p = new Fixtures.Post;
+    return deepEqual([], p.comments_display());
   });
   test("initialize hasMany relation with nested array of attributes", function() {
     var p;
     p = new Fixtures.Post({
       comments: this.comments
     });
-    deepEqual(_.pluck(p.comments.models, 'attributes'), this.comments);
+    deepEqual(_.pluck(p.comments.ref().models, 'attributes'), this.comments);
     return deepEqual(_.pluck(p.comments_display(), 'attributes'), this.comments);
   });
   test("collection resets when attribute changes", function() {
@@ -512,46 +793,46 @@
     this.post.bind('change:comments', function() {
       return ok(true);
     });
-    this.post.comments.bind('reset', function() {
+    this.post.comments.ref().bind('reset', function() {
       return ok(true);
     });
     this.post.set({
       comments: this.comments
     });
-    return deepEqual(_.pluck(this.post.comments.models, 'attributes'), this.comments);
+    return deepEqual(_.pluck(this.post.comments.ref().models, 'attributes'), this.comments);
   });
   test("knockout binding updates when collection is reset", function() {
     expect(3);
-    this.post.comments.bind('reset', function() {
+    this.post.comments.ref().bind('reset', function() {
       return ok(true);
     });
     this.post.comments_display.subscribe(function() {
       return ok(true);
     });
-    this.post.comments.reset(this.comments);
+    this.post.comments.ref().reset(this.comments);
     return deepEqual(_.pluck(this.post.comments_display(), 'attributes'), this.comments);
   });
   test("knockout binding updates when an item is added to the collection", function() {
     expect(4);
-    this.post.comments.bind('add', function() {
+    this.post.comments.ref().bind('add', function() {
       return ok(true, "comments 'add' event was triggered");
     });
     this.post.comments_display.subscribe(function() {
       return ok(true, "comments_display 'subscribe' event was triggered");
     });
-    this.post.comments.add(this.comments[0]);
+    this.post.comments.ref().add(this.comments[0]);
     return deepEqual(_.pluck(this.post.comments_display(), 'attributes'), [this.comments[0]]);
   });
   test("knockout binding updates when an item is removed from the collection", function() {
     expect(3);
-    this.post.comments.reset(this.comments);
-    this.post.comments.bind('remove', function() {
+    this.post.comments.ref().reset(this.comments);
+    this.post.comments.ref().bind('remove', function() {
       return ok(true, "comments 'remove' event was triggered");
     });
     this.post.comments_display.subscribe(function() {
       return ok(true, "comments_display 'subscribe' event was triggered");
     });
-    this.post.comments.remove(this.post.comments.first());
+    this.post.comments.ref().remove(this.post.comments.ref().first());
     return deepEqual(_.pluck(this.post.comments_display(), 'attributes'), [this.comments[1]]);
   });
   test("knockout binding is sorted by position", function() {
@@ -571,7 +852,7 @@
         position: 4
       }
     ];
-    this.post.comments.add(positionalComments);
+    this.post.comments.ref().add(positionalComments);
     commentsOrder = _.map(this.post.comments_display(), function(comment) {
       return comment.position();
     });
@@ -580,6 +861,10 @@
       ok(comment.position() > lastPosition, "comments_display() should display comments in order, but order was [" + commentsOrder + "]");
       return lastPosition = comment.position();
     }, this));
+  });
+  module('Knockback.Model: circular relations');
+  test('should not cause a stack overflow', function() {
+    return new Fixtures.Circular1;
   });
   module('Knockback.Model: saving', {
     setup: function() {
@@ -623,15 +908,15 @@
     this.response.post = _.extend(this.response.post, this.relations);
     Fixtures.BackboneSyncResponse = this.response;
     this.post.save();
-    equal(this.post.author.name(), 'Joe Test');
-    return deepEqual(this.post.comments.pluck('content'), ['foo']);
+    equal(this.post.author.ref().name(), 'Joe Test');
+    return deepEqual(this.post.comments.ref().pluck('content'), ['foo']);
   });
   test("should look for relations in top level of response", function() {
     this.response = _.extend(this.response, this.relations);
     Fixtures.BackboneSyncResponse = this.response;
     this.post.save();
-    equal(this.post.author.name(), 'Joe Test');
-    return deepEqual(this.post.comments.pluck('content'), ['foo']);
+    equal(this.post.author.ref().name(), 'Joe Test');
+    return deepEqual(this.post.comments.ref().pluck('content'), ['foo']);
   });
   test("should trigger events for model and relations after save", function() {
     var events;
@@ -663,13 +948,13 @@
     this.post.bind('change:name', function() {
       return events['post/change:name'].actual += 1;
     });
-    this.post.author.bind('change', function() {
+    this.post.author.ref().bind('change', function() {
       return events['author/change'].actual += 1;
     });
-    this.post.comments.bind('add', function() {
+    this.post.comments.ref().bind('add', function() {
       return events['comments/add'].actual += 1;
     });
-    this.post.comments.bind('reset', function() {
+    this.post.comments.ref().bind('reset', function() {
       return events['comments/reset'].actual += 1;
     });
     this.response = _.extend(this.response, this.relations);
@@ -678,6 +963,117 @@
     return _.each(events, function(info, eventName) {
       return equal(info.actual, info.expected, "'" + eventName + "' event should be called once, but was called " + info.actual + " times");
     });
+  });
+  module('Knockback.Model#includeObservables', {
+    setup: function() {
+      this.modelClass = Knockback.Model.extend({
+        observables: {
+          foo: 'foo',
+          bar: 'bar'
+        }
+      });
+      this.model = new this.modelClass;
+      return this.presenterMethods = {
+        fooBar: function() {
+          return "" + (this.foo()) + " " + (this.bar());
+        },
+        barFoo: function() {
+          return "" + (this.bar()) + " " + (this.foo());
+        },
+        qwerty: 3
+      };
+    }
+  });
+  test('creates a dependentObservable for each function in the object', function() {
+    this.model.includeObservables(this.presenterMethods);
+    ok(this.model.fooBar, 'model should have a #fooBar method');
+    ok(this.model.fooBar.__ko_proto__, '#fooBar should be observable');
+    ok(this.model.barFoo, 'model should have a #barFoo method');
+    ok(this.model.fooBar.__ko_proto__, '#barFoo should be observable');
+    equal(this.model.fooBar(), 'foo bar');
+    return equal(this.model.barFoo(), 'bar foo');
+  });
+  test("the dependentObservable return value changes when the model's attributes change", function() {
+    this.model.includeObservables(this.presenterMethods);
+    this.model.set({
+      foo: 'bananas'
+    });
+    return equal(this.model.fooBar(), 'bananas bar');
+  });
+  test('skips object keys that are not functions', function() {
+    try {
+      this.model.includeObservables(this.presenterMethods);
+      return ok(!this.model.qwerty, 'model should not have a #qwerty property');
+    } catch (ex) {
+      return ok(false, 'should not throw an exception');
+    }
+  });
+  test('raises exception if a method with the same name already exists on the model', function() {
+    var P;
+    P = {
+      save: function() {
+        return 'me';
+      }
+    };
+    return raises((__bind(function() {
+      return this.model.includeObservables(P);
+    }, this)), /dependentObservable would overwrite existing property or method: 'save'/);
+  });
+  test('merges methods from multiple objects', function() {
+    var A, B;
+    A = {
+      fooBar: function() {
+        return 'AAAAAA';
+      },
+      really: function() {
+        return 'really?';
+      }
+    };
+    B = {
+      really: function() {
+        return 'REALLY?!?!';
+      },
+      inspect: function() {
+        return "foo: " + (this.foo()) + ", bar: " + (this.bar());
+      }
+    };
+    this.model.includeObservables(this.presenterMethods, A, B);
+    equal(this.model.fooBar(), 'AAAAAA');
+    equal(this.model.barFoo(), 'bar foo');
+    equal(this.model.really(), 'REALLY?!?!');
+    return equal(this.model.inspect(), 'foo: foo, bar: bar');
+  });
+  module('Knockback.Model deferred evaluation of dependent observables', {
+    setup: function() {
+      var depObs;
+      this.dependentObservables = depObs = {
+        informFunction: function() {
+          window.evaluationPerformed = true;
+          return 42;
+        }
+      };
+      this.modelClass = Knockback.Model.extend({
+        observables: {
+          inform: function() {}
+        },
+        inform: depObs.informFunction
+      });
+      return this.model = new this.modelClass;
+    },
+    teardown: function() {
+      return delete window.evaluationPerformed;
+    }
+  });
+  test('specified in model', function() {
+    ok(!window.evaluationPerformed, 'evaluation function should not have been called yet');
+    equal(42, this.model.inform());
+    return equal(true, window.evaluationPerformed, 'evaluation function should have been called');
+  });
+  test('included in model', function() {
+    this.model.includeObservables(this.dependentObservables);
+    ok(!window.evaluationPerformed, 'evaluation function should not have been called yet');
+    equal(42, this.model.informFunction());
+    return equal(true, window.evaluationPerformed, 'evaluation function should have been called');
   });
   module("Knockback.Controller");
   test("has extend method", function() {
