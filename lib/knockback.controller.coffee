@@ -29,7 +29,7 @@ Knockback.Controller = Backbone.Router.extend
 
     _.each @routes, (name, pattern) =>
       handler = @handlerForRoute(name)
-      if handler
+      if handler and not @_wrapped[name]
         handler.callback = @_wrapped[name] = _.wrap handler.callback, (callback, urlFragment) =>
           @actionWithFilters name, callback, urlFragment
 
